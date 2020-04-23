@@ -4,20 +4,20 @@
 
 typedef float FLOAT;
 #define USE_UNIX 1
-
+/* #define USE_UNIX 0 对于windows改成0*/
 /* get thread id: 1D block and 2D grid */
 #define get_tid() (blockDim.x * (blockIdx.x + blockIdx.y * gridDim.x) + threadIdx.x)
 
 /* get block id: 2D grid */
 #define get_bid() (blockIdx.x + blockIdx.y * gridDim.x)
 
-/* warm up, start GPU, optional */
+/* warm up, start GPU, optional 使GPU预热一下，也可以不进行*/
 void warmup();
 
 /* get time stamp */
 double get_time(void);
 
-/* host, add */
+/* host, add CPU上面的加法运算*/
 void vec_add_host(FLOAT *x, FLOAT *y, FLOAT *z, int N);
 
 /* device function */
@@ -25,7 +25,7 @@ __global__ void vec_add(FLOAT *x, FLOAT *y, FLOAT *z, int N)
 {
     /* 1D block */
     int idx = get_tid();
-
+    /*  */
     if (idx < N) z[idx] = z[idx] + y[idx] + x[idx];
 }
 
@@ -89,6 +89,7 @@ void warmup()
     int i;
 
     for (i = 0; i < 8; i++) {
+        /* 256 threadings */
         warmup_knl<<<1, 256>>>();
     }
 }
@@ -98,14 +99,14 @@ int main()
     int N = 20000000;
     int nbytes = N * sizeof(FLOAT);
 
-    /* 1D block */
+    /* 1D block 一维网格*/
     int bs = 256;
 
     /* 2D grid */
-    int s = ceil(sqrt((N + bs - 1.) / bs));
+    int s = ceil(sqrt((N + bs - 1.) / bs)); /* 开平方，把10000个点划分成2D的100*100 */
     dim3 grid = dim3(s, s);
 
-    FLOAT *dx = NULL, *hx = NULL;
+    FLOAT *dx = NULL, *hx = NULL; /* dx GPU上内存, hx CPU上内存 */
     FLOAT *dy = NULL, *hy = NULL;
     FLOAT *dz = NULL, *hz = NULL;
 
@@ -117,6 +118,7 @@ int main()
     warmup();
 
     /* allocate GPU mem */
+    /* 申请三个向量 */
     cudaMalloc((void **)&dx, nbytes);
     cudaMalloc((void **)&dy, nbytes);
     cudaMalloc((void **)&dz, nbytes);
@@ -147,6 +149,7 @@ int main()
     }
 
     /* copy data to GPU */
+    /* dx目的地, hx soure, size, direction(Host to device) */
     cudaMemcpy(dx, hx, nbytes, cudaMemcpyHostToDevice);
     cudaMemcpy(dy, hy, nbytes, cudaMemcpyHostToDevice);
     cudaMemcpy(dz, hz, nbytes, cudaMemcpyHostToDevice);
@@ -155,7 +158,7 @@ int main()
     warmup();
 
     /* call GPU */
-    cudaThreadSynchronize();
+    cudaThreadSynchronize(); /* 卡在这行，等待GPU所有动作结束才继续，因为GPU是异步的 */ /* CPU是同步的 */
     td = get_time();
     
     for (i = 0; i < itr; i++) vec_add<<<grid, bs>>>(dx, dy, dz, N);
